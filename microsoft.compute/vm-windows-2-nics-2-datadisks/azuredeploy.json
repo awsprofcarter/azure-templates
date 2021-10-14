@@ -1,0 +1,197 @@
+//Creation date 10/13/2021, by Steven Carter
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "adminUsername": {
+            "type": "string",
+            "defaultValue": "adminuser0000",
+            "metadata": {
+                "description": "admin username for the virtual machine"
+            }
+        },
+        "adminPassword": {
+            "minLength": 12,
+            "type": "securestring",
+            "metadata": {
+                "description": "admin password for the virtual machine"
+            }
+        },
+        "vmName": {
+            "defaultValue": "vm-testfc",
+            "type": "string",
+            "metadata": {
+                "description": "Name of the VM"
+              }
+        },
+        "virtualNetworkName": {
+            "allowedValues": ["finaltestrepo-vnet"],
+            "type": "string",
+            "metadata": {
+                "description": "Name of the existing VNET"
+            }
+        },
+        "subnetName": {
+            "allowedValues": ["finaltestrepo-snet"],
+            "type": "string",
+            "metadata": {
+                "description": "Name of the subnet in the virtual network you want to use"
+            }
+        },
+        "resourceTags": {
+            "type": "object",
+            "defaultValue": {
+                "created By": "Steven Carter",
+                "creation Date": "[utcNow('d')]"
+            }
+        }
+    },
+    "variables": {
+        "nicName1": "[concat('nic-',parameters('vmName'),'-1')]",
+        "nicName2": "[concat('nic-',parameters('vmName'),'-2')]"
+    },
+    "resources": [   
+        {
+            "type": "Microsoft.Network/networkInterfaces",
+            "apiVersion": "2020-11-01",
+            "name": "[variables('nicName1')]",
+            "location": "[resourceGroup().location]",
+            "tags": "[parameters('resourceTags')]",
+            "properties": {
+                // "enableAcceleratedNetworking": true,             #feature not available on Standard_B2s
+                // "enableIPForwarding": false,                     #feature not available on Standard_B2s
+                "ipConfigurations": [
+                    {
+                        "name": "ipconfig1",
+                        "properties": {
+                            "privateIPAllocationMethod": "Dynamic",
+                            "primary": true,
+                            "subnet": {
+                                "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets',parameters('virtualNetworkName'),parameters('subnetName'))]"
+                            }
+                        }
+                    }
+                ]
+            }
+        },    
+        {
+            "type": "Microsoft.Network/networkInterfaces",
+            "apiVersion": "2020-11-01",
+            "name": "[variables('nicName2')]",
+            "location": "[resourceGroup().location]",
+            "tags": "[parameters('resourceTags')]",
+            "dependsOn": ["[resourceId('Microsoft.Network/networkInterfaces', variables('nicName1'))]"],
+            "properties": {
+                // "enableAcceleratedNetworking": true,             #feature not available on Standard_B2s
+                // "enableIPForwarding": false,                     #feature not available on Standard_B2s
+                "ipConfigurations": [
+                    {
+                        "name": "ipconfig1",
+                        "properties": {
+                            "privateIPAllocationMethod": "Dynamic",
+                            "primary": true,
+                            "subnet": {
+                                "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets',parameters('virtualNetworkName'),parameters('subnetName'))]"
+                            }
+                        }
+                    }
+                ]
+            }
+        },       
+        {
+            "type": "Microsoft.Compute/virtualMachines",
+            "apiVersion": "2021-03-01",
+            "name": "[parameters('vmName')]",
+            "location": "[resourceGroup().location]",
+            "tags": "[parameters('resourceTags')]",
+            "dependsOn": ["[resourceId('Microsoft.Network/networkInterfaces', variables('nicName2'))]"],
+            "properties": {
+                "hardwareProfile": {
+                    "vmSize": "Standard_B2s"
+                },
+                "storageProfile": {
+                    "imageReference": {
+                        "publisher": "MicrosoftWindowsServer",
+                        "offer": "WindowsServer",
+                        "sku": "2019-Datacenter",
+                        "version": "latest"
+                    },
+                    "osDisk": {
+                        "osType": "Windows",
+                        "name": "[concat(parameters('vmName'), '_OsDisk')]",
+                        "createOption": "FromImage",
+                        "caching": "ReadWrite",
+                        "managedDisk": {
+                            "storageAccountType": "Premium_LRS"
+                        },
+                        "diskSizeGB": 127
+                    },
+                    "dataDisks": [
+                        {
+                            "lun": 0,
+                            "name": "[concat(parameters('vmName'), '_DataDisk_0')]",
+                            "createOption": "Empty",
+                            "caching": "ReadOnly",
+                            "writeAcceleratorEnabled": false,
+                            "managedDisk": {
+                                "storageAccountType": "Standard_LRS"
+                            },
+                            "diskSizeGB": 256,
+                            "toBeDetached": false
+                        },
+                        {
+                            "lun": 1,
+                            "name": "[concat(parameters('vmName'), '_DataDisk_1')]",
+                            "createOption": "Empty",
+                            "caching": "ReadOnly",
+                            "writeAcceleratorEnabled": false,
+                            "managedDisk": {
+                                "storageAccountType": "Standard_LRS"
+                            },
+                            "diskSizeGB": 256,
+                            "toBeDetached": false
+                        }
+                    ]
+                },
+                "osProfile": {
+                    "computerName": "[parameters('vmName')]",
+                    "adminUsername": "[parameters('adminUsername')]",
+                    "adminPassword": "[parameters('adminPassword')]",
+                    "windowsConfiguration": {
+                        "provisionVMAgent": true,
+                        "enableAutomaticUpdates": true,
+                        "patchSettings": {
+                            "patchMode": "AutomaticByOS",
+                            "assessmentMode": "ImageDefault"
+                        }
+                    },
+                    "secrets": [],
+                    "allowExtensionOperations": true
+                    // "requireGuestProvisionSignal": true                  #feature not available in lab subscription
+                },
+                "networkProfile": {
+                    "networkInterfaces": [
+                        {
+                            "id": "[resourceId('Microsoft.Network/networkInterfaces',variables('nicName1'))]",
+                            "properties": {
+                                "primary": true
+                            }
+                        },
+                        {
+                            "id": "[resourceId('Microsoft.Network/networkInterfaces',variables('nicName2'))]",
+                            "properties": {
+                                "primary": false
+                            }
+                        }
+                    ]
+                },
+                "diagnosticsProfile": {
+                    "bootDiagnostics": {
+                        "enabled": true
+                    }
+                },
+                "licenseType": "Windows_Server"
+            }
+        }
+    ]
+}
